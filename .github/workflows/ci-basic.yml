@@ -1,4 +1,5 @@
-name: Basic CI Pipeline
+# 替换或添加以下内容到你的 ci-basic.yml
+name: Enhanced CI Pipeline
 
 on:
   push:
@@ -22,11 +23,26 @@ jobs:
     - name: Install dependencies
       run: |
         pip install --upgrade pip
-        pip install flask pytest
+        pip install flask pytest pytest-cov  # 添加 pytest-cov
         
-    - name: Run tests
+    # === 新增：运行测试并生成覆盖率报告 ===
+    - name: Run tests with coverage
       run: |
-        python -m pytest tests/ -v
+        python -m pytest tests/ -v --cov=app --cov-report=xml --cov-report=html
         
-    - name: Test passed
-      run: echo "✅ All tests passed!"
+    # === 新增：上传覆盖率报告 ===
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-report-${{ github.run_id }}
+        path: |
+          coverage.xml
+          htmlcov/
+        retention-days: 7
+        
+    # === 新增：覆盖率阈值检查 ===
+    - name: Check coverage threshold
+      run: |
+        pip install coverage
+        coverage run -m pytest tests/
+        coverage report --fail-under=70  # 如果覆盖率低于70%，CI会失败
