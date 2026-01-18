@@ -1,0 +1,72 @@
+# .github/workflows/docker-build.yml
+name: Docker Build and Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # 允许手动触发
+
+env:
+  IMAGE_NAME: bookstore-api
+
+jobs:
+  docker-build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        driver: docker-container  # 使用容器驱动，更快
+        
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        load: true  # 只构建，不推送
+        tags: ${{ env.IMAGE_NAME }}:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        
+    - name: Test Docker image
+      run: |
+        echo "🔍 检查镜像信息..."
+        docker images
+        
+        echo "🧪 运行容器测试..."
+        docker run --rm ${{ env.IMAGE_NAME }}:latest \
+          python -c "from app import app; print('✅ App imports successfully')"
+          
+        echo "🌐 测试Web服务..."
+        # 在后台运行容器
+        docker run -d --name test-app -p 5000:5000 ${{ env.IMAGE_NAME }}:latest
+        sleep 5  # 等待应用启动
+        
+        # 测试API端点
+        curl -f http://localhost:5000/ || echo "❌ 服务启动失败"
+        curl -f http://localhost:5000/books || echo "❌ API调用失败"
+        
+        # 清理
+        docker stop test-app
+        docker rm test-app
+        
+    - name: Scan for vulnerabilities (Trivy)
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.IMAGE_NAME }}:latest
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'  # 只检查严重和高危漏洞
+        
+    - name: Upload security scan results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: trivy-security-scan
+        path: trivy-results.sarif
